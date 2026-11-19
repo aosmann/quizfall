@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Quizfall live relay demo</title>
+<style>
+body{margin:0;font:14px system-ui,sans-serif;background:#0b1029;color:#fff;height:100vh;display:grid;grid-template-rows:auto 1fr}
+header{display:flex;gap:10px;align-items:center;padding:8px 12px;background:#141b44;flex-wrap:wrap}
+header button{font:inherit;font-weight:700;border:0;border-radius:8px;padding:7px 12px;cursor:pointer}
+header code{opacity:.7}
+main{display:grid;grid-template-columns:1fr auto;min-height:0}
+#host{width:100%;height:100%;border:0}
+#players{display:flex;flex-wrap:wrap;align-content:flex-start;gap:8px;overflow:auto;padding:8px;max-width:58vw}
+.ph{display:flex;flex-direction:column;gap:4px;font-weight:700}
+.ph iframe{width:300px;height:560px;border:2px solid #333a6b;border-radius:18px;background:#0d1433}
+#log{position:fixed;right:8px;bottom:8px;width:340px;max-height:30vh;overflow:auto;background:rgba(0,0,0,.75);font:11px ui-monospace,monospace;padding:6px;border-radius:8px;white-space:pre-wrap}
+</style></head>
+<body>
+<header><b>Quizfall relay demo</b> — acts like the portal: relays <code>edu-bcast</code>, <code>edu-up</code>, <code>edu-players</code>.
+<button id="add">+ player</button><button id="drop">− player</button><button id="logb">log</button></header>
+<main><iframe id="host" allow="autoplay"></iframe><div id="players"></div></main>
+<div id="log" hidden></div>
+<script>
+/* A reference relay for the portal. Opens the host board and N student iframes, and passes messages between them exactly as
+   described in README.md ("Live rounds"). Query: ?topic=capitals&level=1&count=5&time=20&lang=en&avatars=<base url of cat images> */
+const Q=new URLSearchParams(location.search),base=new URL('./',location.href).href;
+const pass=['topic','level','count','time','regions','lang','qset'].filter(k=>Q.get(k)).map(k=>`${k}=${encodeURIComponent(Q.get(k))}`).join('&')||'topic=capitals&level=1&count=5&time=20';
+const AVB=Q.get('avatars')||'https://aosmann.github.io/edugames/avatars/';
+const CATS=['cat-cool','cat-party','cat-star','cat-dj','cat-fancy','cat-sassy','cat-artist','cat-cheeky'],NAMES=['Maria','Andrei','Ioana','Luca','Sofia','David','Elena','Matei'];
+const seed=Math.random()*1e9|0,hostF=document.getElementById('host');hostF.src=`${base}?host=1&${pass}&seed=${seed}`;
+const players=[];let n=0;const logEl=document.getElementById('log');
+const log=(...a)=>{logEl.textContent=(a.map(x=>typeof x==='string'?x:JSON.stringify(x)).join(' ')+'\n'+logEl.textContent).slice(0,8000)};
+const roster=()=>players.filter(p=>p.ready).map(({id,name,avatar})=>({id,name,avatar}));
+const sendPlayers=()=>hostF.contentWindow.postMessage({type:'edu-players',players:roster()},'*');
+function addPlayer(){const k=n++,id='peer-'+k+'-'+(Math.random()*1e4|0),name=NAMES[k%NAMES.length]+(k>=NAMES.length?' '+(k+1):''),avatar=new URL(CATS[k%CATS.length]+'.webp',AVB).href;
+  const box=document.createElement('div');box.className='ph';const f=document.createElement('iframe');f.allow='autoplay';
+  f.src=`${base}?player=1&lock=1&${pass}&me=${encodeURIComponent(id)}&name=${encodeURIComponent(name)}&avatar=${encodeURIComponent(avatar)}`;
+  box.append(name,f);document.getElementById('players').append(box);players.push({id,name,avatar,frame:f,box,ready:false})}
+addEventListener('message',e=>{const m=e.data;if(!m||typeof m!=='object')return;
+  if(e.source===hostF.contentWindow){
+    if(m.type==='edu-bcast')players.forEach(p=>p.frame.contentWindow&&p.frame.contentWindow.postMessage({type:'edu-bcast',data:m.data},'*'));
+    if(m.type==='edu-ready')sendPlayers();
+    log('host →',m.type,m.type==='edu-bcast'?m.data.k+(m.data.to?' to '+m.data.to:''):'');return}
+  const p=players.find(p=>p.frame.contentWindow===e.source);if(!p)return;
+  if(m.type==='edu-ready'){p.ready=true;sendPlayers()}
+  if(m.type==='edu-up')hostF.contentWindow.postMessage({type:'edu-up',from:{id:p.id,name:p.name,avatar:p.avatar},data:m.data},'*');
+  log(p.name+' →',m.type,m.type==='edu-up'?m.data:m.type==='edu-result'?m.result:m.type==='edu-progress'?{score:m.score,last:m.last}:'')});
+document.getElementById('add').onclick=addPlayer;
+document.getElementById('drop').onclick=()=>{const p=players.pop();if(p){p.box.remove();sendPlayers()}};
+document.getElementById('logb').onclick=()=>logEl.hidden=!logEl.hidden;
+for(let i=0;i<+(Q.get('players')||3);i++)addPlayer();
+</script>
+</body></html>

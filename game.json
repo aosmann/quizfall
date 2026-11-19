@@ -1,0 +1,17 @@
+{
+  "contract": 1,
+  "id": "quizfall",
+  "name": "Quizfall",
+  "pitch": "Answer right. Answer fast.",
+  "description": "A fast, colourful quiz with four coloured answers. Play solo against the clock, or run it live on the board while the whole class answers from their phones.",
+  "color": "#2647d9",
+  "icon": "icon-512.png",
+  "bank": "EduQ",
+  "score": "points",
+  "multiplayer": {"live": true},
+  "settings": [
+    {"key": "level", "label": "Difficulty", "options": [[1, "Easy"], [2, "Medium"], [3, "Hard"]], "default": "topic"},
+    {"key": "count", "label": "Questions", "options": [[5, "5"], [10, "10"], [15, "15"], [20, "20"]], "default": 10},
+    {"key": "time", "label": "Time per question", "options": [[10, "10 sec"], [20, "20 sec"], [30, "30 sec"]], "default": 20}
+  ]
+}
