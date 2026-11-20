@@ -32,7 +32,7 @@ const RO={
  'Pick the colour with the right answer before the clock runs out. Keys 1 to 4 work too.':'Alege culoarea cu răspunsul corect înainte să expire timpul. Merg și tastele 1–4.',
  'Faster answers score more: 500 to 1000 points.':'Răspunsurile rapide aduc mai mult: între 500 și 1000 de puncte.',
  'Answer streaks add a bonus, up to +500.':'Seriile de răspunsuri corecte aduc bonus, până la +500.',
- 'None of these':'Niciuna dintre acestea','Answer streak':'Serie de răspunsuri','Streak lost':'Serie pierdută','Best':'Record'};
+ 'None of these':'Niciuna dintre acestea','Answer streak':'Serie de răspunsuri','Streak lost':'Serie pierdută','Answer streak lost':'Serie de răspunsuri pierdută','Best':'Record'};
 const L=s=>LANG==='ro'&&RO[s]!=null?RO[s]:(EQ.T?EQ.T(s):s);
 const ordEn=n=>{const v=n%100;return n+((v>10&&v<14)?'th':({1:'st',2:'nd',3:'rd'}[n%10]||'th'))};
 const W={
@@ -44,6 +44,8 @@ const W={
  streak:n=>LANG==='ro'?`Serie de ${n} răspunsuri corecte`:`Answer streak ${n}`,
  count:n=>LANG==='ro'?`${n} întrebări`:`${n} questions`,
  secs:n=>`${n} s`,
+ hot:(n,k)=>LANG==='ro'?`${n} are o serie de ${k} răspunsuri corecte!`:`${n} is on a ${k} answer streak!`,
+ qn:(i,n)=>LANG==='ro'?`${i} din ${n}`:`${i} of ${n}`,
  start:n=>n?L('Start'):(LANG==='ro'?'Start (cel puțin 1 jucător)':'Start (needs 1 player)')};
 
 /* ======================= SMALL DOM HELPERS ======================= */
@@ -63,6 +65,9 @@ const initials=s=>String(s||'?').trim().split(/\s+/).slice(0,2).map(w=>w[0]).joi
 function avatarEl(p){const w=h('span','av');w.style.setProperty('--h',hue(p.name));w.textContent=initials(p.name);
   if(p.avatar){const im=new Image();im.alt='';im.decoding='async';im.onload=()=>{w.textContent='';w.classList.add('img');w.append(im)};im.src=p.avatar}return w}
 const fmt=n=>Math.round(n).toLocaleString(LANG==='ro'?'ro-RO':'en-US');
+/* numbers that count up (score boards); instant with reduced motion */
+function countUp(el,from,to,ms,tick){if(RM.matches||from===to){el.textContent=fmt(to);return}const t0=performance.now();let lastT=0;
+  (function f(now){const k=Math.min(1,(now-t0)/ms),e=1-Math.pow(1-k,3);el.textContent=fmt(from+(to-from)*e);if(tick&&now-lastT>70&&k<1){lastT=now;tick()}if(k<1)requestAnimationFrame(f)})(t0)}
 let timers=[];const later=(f,ms)=>{const t=setTimeout(f,ms);timers.push(t);return t};
 const every=(f,ms)=>{const t=setInterval(f,ms);timers.push(t);return t};
 const clearAll=()=>{timers.forEach(t=>clearInterval(t));timers=[]};
@@ -98,6 +103,8 @@ const SFX={
  timeup(){if(!live())return;const t=AU.ctx.currentTime;tone(880,t,.25,'square',.1,440);hiss(t,.15,.1,'highpass',3000)},
  reveal(){if(!live())return;const t=AU.ctx.currentTime;tone(110,t,.5,'sine',.5,50);hiss(t,.25,.25,'lowpass',1800);tone(mf(79),t+.02,.3,'triangle',.12)},
  roll(sec){if(!live())return;const t=AU.ctx.currentTime;let x=0;for(let k=0;x<sec;k++){hiss(t+x,.05,.12+.15*x/sec,'bandpass',1800);x+=Math.max(.035,.12-k*.004)}},
+ blip(){if(!live())return;tone(1400+Math.random()*500,AU.ctx.currentTime,.03,'square',.035)},
+ climb(){if(!live())return;const t=AU.ctx.currentTime;tone(300,t,.5,'sawtooth',.06,900);hiss(t,.5,.12,'bandpass',600,null,3000)},
  fanfare(){if(!live())return;const t=AU.ctx.currentTime;[[60,64,67],[62,65,69],[64,67,71],[65,69,72],[67,72,76,79]].forEach((c,i)=>c.forEach(m=>{tone(mf(m),t+i*.14,i===4?.9:.16,'square',.06);tone(mf(m),t+i*.14,i===4?1.1:.2,'triangle',.08)}));hiss(t+.56,.8,.12,'highpass',5000)}};
 /* two loops: an upbeat lobby groove and a lighter "thinking" loop under the countdown */
 const SONGS={
@@ -294,12 +301,25 @@ function host(){
     const {ring,media,counter,tiles}=qRefs;ring.set(0,1);markTiles(tiles,q.correct,-1);media.innerHTML='';media.append(chartEl(counts,q.correct));
     if(!answers.size)counter.innerHTML='',counter.append(h('span',null,L('No one answered')));
     const s=stage.querySelector('.screen'),foot=s.querySelector('.foot');foot.innerHTML='';const nx=h('button','btn',L('Next'));nx.type='button';nx.onclick=()=>board();foot.append(nx);onKey=primaryKey(nx);nx.focus()}
-  function board(){phase='board';qRefs=null;SFX.whoosh();const R=ranked(),top=R.slice(0,5);
-    lastReveal={...lastReveal,k:'board',top:top.map(p=>({id:p.id,name:p.name,avatar:p.avatar,total:p.total,rank:p.rank,move:p.prev?p.prev-p.rank:0}))};bcast(lastReveal);
-    const s=screen('board');s.append(h('h2',null,L('Scoreboard')));const rows=h('div','rows');
-    top.forEach((p,k)=>{const mv=p.prev?p.prev-p.rank:0,r=h('div','prow',h('span','rk',String(p.rank)),avatarEl(p),h('span','nm',p.name),h('span','pt',fmt(p.total)),
-      h('span','mv '+(mv>0?'up':mv<0?'dn':''),mv>0?`${ICON.up} ${mv}`:mv<0?`${ICON.dn} ${-mv}`:''));r.style.animationDelay=k*.08+'s';rows.append(r)});
-    s.append(rows);const foot=h('div','foot'),last=cur+1>=QS.length,nx=h('button','btn',L(last?'Podium':'Next'));nx.type='button';nx.onclick=()=>last?end():intro(cur+1);foot.append(nx);s.append(foot);onKey=primaryKey(nx);nx.focus()}
+  function board(){phase='board';qRefs=null;SFX.whoosh();const R=ranked(),top=R.slice(0,5),res=(lastReveal&&lastReveal.res)||{};
+    lastReveal={...lastReveal,k:'board',top:top.map(p=>({id:p.id,name:p.name,avatar:p.avatar,total:p.total,rank:p.rank,move:p.prev?p.prev-p.rank:0,streak:p.streak}))};bcast(lastReveal);
+    const s=screen('board');s.append(h('h2',null,L('Scoreboard')));
+    /* Kahoot-style: rows start in the old order with the old points, the points count up, streak flames pop, then the rows slide into the new order */
+    const gain=p=>(res[p.id]&&res[p.id].pts)||0,before=p=>p.total-gain(p);
+    const old=[...R].sort((a,b)=>before(b)-before(a)||a.seq-b.seq),N=5;
+    const list=[...new Set([...old.slice(0,N),...top])],sb=h('div','sb'),rows=new Map();
+    list.forEach(p=>{const oi=old.indexOf(p),r=h('div','srow'+(oi>=N?' out':'')),pt=h('span','pt',fmt(before(p))),fl=h('span','fl'),plus=h('span','plus'),mv=h('span','mv');
+      fl.innerHTML=ICON.flame;fl.append(String(p.streak));r.style.setProperty('--i',Math.min(oi,N));r.append(avatarEl(p),h('span','nm',p.name),fl,plus,pt,mv);sb.append(r);rows.set(p,{r,pt,fl,plus,mv})});
+    s.append(sb);
+    const hot=R.filter(p=>p.streak>=3&&res[p.id]&&res[p.id].ok).sort((a,b)=>b.streak-a.streak)[0];
+    if(hot){const bn=h('div','sbanner');bn.innerHTML=ICON.flame;bn.append(W.hot(hot.name,hot.streak));s.append(bn)}
+    const foot=h('div','foot'),last=cur+1>=QS.length,nx=h('button','btn',L(last?'Podium':'Next'));nx.type='button';nx.onclick=()=>last?end():intro(cur+1);foot.append(nx);s.append(foot);onKey=primaryKey(nx);nx.focus();
+    const fast=RM.matches;
+    later(()=>{let first=true;rows.forEach(({pt,fl,plus},p)=>{const g=gain(p);if(g>0){plus.textContent='+'+fmt(g);plus.classList.add('on');countUp(pt,before(p),p.total,1100,first?SFX.blip:null);first=false}
+      if(p.streak>=2&&res[p.id]&&res[p.id].ok)fl.classList.add('on')})},fast?0:650);
+    later(()=>{let moved=false;rows.forEach(({r,plus,mv},p)=>{const ni=R.indexOf(p),oi=old.indexOf(p);r.style.setProperty('--i',Math.min(ni,N));r.classList.toggle('out',ni>=N);
+        plus.classList.remove('on');const d=oi-ni;if(d>0&&ni<N){r.classList.add('climb');moved=true;mv.textContent=`${ICON.up} ${d}`;mv.style.color='#26890c';mv.classList.add('on')}
+        r.classList.toggle('lead',ni===0&&R.length>1)});if(moved)SFX.climb()},fast?0:2100)}
   function end(){phase='end';const R=ranked(),res={};R.forEach((p,k)=>{p.rank=k+1;res[p.id]={rank:p.rank,total:p.total,right:p.right,asked:p.asked,best:p.best}});
     endMsg={k:'end',total:QS.length,players:R.length,res,top:R.slice(0,3).map(p=>({id:p.id,name:p.name,avatar:p.avatar,total:p.total})),info};bcast(endMsg);
     toParent({type:'edu-live-end',game:GAME,...info,players:R.length,at:new Date().toISOString(),
@@ -320,7 +340,10 @@ function player(){
   listen(m=>{if(m.type!=='edu-bcast'||!m.data||typeof m.data!=='object')return;const d=m.data;if(d.to!=null&&d.to!==ME)return;heard=true;if(d.info)info=d.info;handle(d)});
   toParent({type:'edu-ready',game:GAME,player:true});up({a:'hello'});
   const hi=setInterval(()=>{if(heard)clearInterval(hi);else up({a:'hello'})},3000);
-  topMid.innerHTML='';const tp=h('span','pill',NAME);topMid.append(tp);
+  topMid.innerHTML='';const tp=h('span','pill',L('Get ready…'));topMid.append(tp);
+  /* bottom bar like the big quiz shows: your cat, your name, your score */
+  const pbar=h('div');pbar.id='pbar';const scEl=h('span','sc','0');pbar.append(avatarEl({name:NAME,avatar:AV}),h('span','nm',NAME),scEl);$('app').append(pbar);let shownScore=0,lastStreak=0;
+  const FUN=LANG==='ro'?['Ai fost prea rapid?','Ține pumnii strânși…','Hmm, interesant…','Să vedem…','Ai răspuns ca un fulger!']:['Were you tooooo fast?','Fingers crossed…','Hmm, interesting choice…','Drumroll, please…','Lightning fingers!'];
   function handle(d){
     if(ended&&d.k!=='end')return;
     if(d.k==='lobby'){if(phase==='wait'||phase==='init')waitScreen();return}
@@ -331,9 +354,9 @@ function player(){
     if(d.k==='end')endScreen(d)}
   function waitScreen(){phase='wait';const s=screen('center');s.append(avatarEl({name:NAME,avatar:AV}),h('h1','big',L("You're in!")),h('p','sub',L('See your name on the board?')));
     s.querySelector('.av').style.cssText='width:min(34vmin,150px);height:min(34vmin,150px);font-size:40px;border:5px solid #fff'}
-  function readyScreen(d){phase='ready';const s=screen('center');s.append(h('div','pill',W.qOf(d.i+1,d.total)),h('h1','big',L('Get ready…')),h('div','spin'))}
-  function questionScreen(d){phase='question';const s=screen();const recv=performance.now(),total=d.time*1000;
-    const pill=h('span','timerpill'),top=h('div','pl-top',h('span',null,`${d.i+1}/${d.total}`),pill);
+  function readyScreen(d){phase='ready';tp.textContent=W.qn(d.i+1,d.total);const s=screen('center');s.append(h('div','pill',W.qOf(d.i+1,d.total)),h('h1','big',L('Get ready…')),h('div','spin'))}
+  function questionScreen(d){phase='question';tp.textContent=W.qn(d.i+1,d.total);const s=screen();const recv=performance.now(),total=d.time*1000;
+    const pill=h('span','timerpill'),top=h('div','pl-top',h('span'),pill);
     const card=h('div','pl-q');if(d.img){const im=h('img');im.src=d.img;im.alt='';card.append(im)}card.append(h(d.code?'code':'span',null,d.text));
     const grid=h('div','pl-tiles');const pick=k=>{if(answered.has(d.i))return;answered.add(d.i);const ms=Math.round(total-d.left+(performance.now()-recv));
       up({a:'answer',q:d.i,pick:k,ms});SFX.click();if(navigator.vibrate)try{navigator.vibrate(25)}catch(e){};lockedScreen(d.i,k)};
@@ -341,14 +364,15 @@ function player(){
     onKey=e=>{const k='1234'.indexOf(e.key);if(k>=0){e.preventDefault();pick(k)}};
     qClock=clock(total,d.left,l=>{pill.textContent=Math.ceil(l/1000);pill.classList.toggle('hurry',l<=5000)},()=>{if(!answered.has(d.i)){const s2=screen('center');s2.append(h('h1','big',L("Time's up!")),h('p','sub',L('Look at the board!')));SFX.timeup()}},true)}
   function lockedScreen(i,k){phase='locked';const s=screen('center');if(k>=0){const b=h('div','lockbig t'+k);b.innerHTML=shp(k);s.append(b)}
-    s.append(h('h1','big',L('Answer locked in…')),h('div','spin'))}
+    s.append(h('h1','big',L('Answer locked in…')),h('p','funny',FUN[Math.floor(Math.random()*FUN.length)]),h('div','spin'))}
   function resultScreen(d){const r=d.res&&d.res[ME],q=QS[d.i];phase='result';const s=screen();
     if(!r){const f=h('div','full neutral');f.append(h('h1','big',L('Look at the board!')),h('p','sub',L('You joined mid-question. Next one is yours!')));s.append(f);return}
     const box=h('div','full '+(r.ok?'good':'bad')),mark=h('div','mark');mark.innerHTML=r.ok?ICON.check:ICON.cross;
     box.append(mark,h('h1','big',r.ok?L('Correct!'):r.pick<0?L("Time's up!"):L('Wrong')));
-    if(r.ok)box.append(h('div','pts','+'+fmt(r.pts)));
+    if(r.ok){const pe=h('div','pts','+');box.append(pe);const n=h('span',null,'0');pe.append(n);later(()=>countUp(n,0,r.pts,700),380)}
+    if(!r.ok&&lastStreak>=2){const st=h('div','streak');st.innerHTML=ICON.flame;st.append(L('Answer streak lost'));box.append(st)}
     if(r.ok&&r.streak>=1){const st=h('div','streak');st.innerHTML=ICON.flame;st.append(W.streak(r.streak)+(r.bonus?` · +${r.bonus}`:''));box.append(st)}
-    box.append(h('p','place',W.place(r.rank,r.ahead,d.players)));s.append(box);
+    box.append(h('p','place',W.place(r.rank,r.ahead,d.players)));s.append(box);lastStreak=r.streak;if(r.total!==shownScore){countUp(scEl,shownScore,r.total,900);shownScore=r.total}
     if(!judged.has(d.i)){judged.add(d.i);(r.ok?SFX.correct:SFX.wrong)();if(navigator.vibrate)try{navigator.vibrate(r.ok?[30,40,30]:120)}catch(e){}
       asked++;if(r.ok)right++;bestStreak=Math.max(bestStreak,r.streak);score=r.total;
       const qq={q:q?q.text:'',img:q?q.img:null,answer:d.answer,tag:q?q.tag:null},pickT=r.pick>=0&&q?q.choices[r.pick]:'missed';
